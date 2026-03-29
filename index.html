@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional CMA Tool - Realtor Edition</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #3498db; --bg: #f8f9fa; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: #333; line-height: 1.6; margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; border: 1px solid #e1e4e8; }
+        h1, h2 { color: var(--primary); margin-top: 0; }
+        .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: #666; }
+        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; transition: border 0.2s; }
+        input:focus { border-color: var(--accent); outline: none; }
+        .btn-main { background: var(--accent); color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1.1rem; font-weight: 600; width: 100%; }
+        .btn-main:hover { background: #2980b9; }
+        #reportOutput { background: #fff; border-left: 5px solid var(--accent); padding: 30px; display: none; white-space: pre-wrap; font-size: 1.05rem; color: #2c3e50; }
+        .adjustment-settings { font-size: 0.8rem; background: #eee; padding: 10px; border-radius: 5px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Market Analysis Generator</h1>
+    <p>Compare the subject property to 3 recent sales to determine market value.</p>
+
+    <div class="adjustment-settings">
+        <strong>Adjustment Rules:</strong> $150 per SqFt | $25,000 per Floor Level | $15,000 per Bedroom
+    </div>
+
+    <div class="card" style="border-top: 5px solid #e67e22;">
+        <h2>Subject Property (The target house)</h2>
+        <div class="grid-4">
+            <div class="input-group"><label>Address</label><input type="text" id="sub_addr" placeholder="ex: 456 Rue Peel"></div>
+            <div class="input-group"><label>Sq. Footage</label><input type="number" id="sub_sqft" value="1800"></div>
+            <div class="input-group"><label>Floors</label><input type="number" id="sub_floors" value="2"></div>
+            <div class="input-group"><label>Bedrooms</label><input type="number" id="sub_beds" value="3"></div>
+        </div>
+    </div>
+
+    <div id="comps-container">
+        <div class="card">
+            <h3>Comparable Sale #1</h3>
+            <div class="grid-4">
+                <div class="input-group"><label>Sale Price ($)</label><input type="number" id="c1_price" value="500000"></div>
+                <div class="input-group"><label>Sq. Footage</label><input type="number" id="c1_sqft" value="1700"></div>
+                <div class="input-group"><label>Floors</label><input type="number" id="c1_floors" value="2"></div>
+                <div class="input-group"><label>Bedrooms</label><input type="number" id="c1_beds" value="3"></div>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Comparable Sale #2</h3>
+            <div class="grid-4">
+                <div class="input-group"><label>Sale Price ($)</label><input type="number" id="c2_price" value="550000"></div>
+                <div class="input-group"><label>Sq. Footage</label><input type="number" id="c2_sqft" value="2000"></div>
+                <div class="input-group"><label>Floors</label><input type="number" id="c2_floors" value="2"></div>
+                <div class="input-group"><label>Bedrooms</label><input type="number" id="c2_beds" value="4"></div>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Comparable Sale #3</h3>
+            <div class="grid-4">
+                <div class="input-group"><label>Sale Price ($)</label><input type="number" id="c3_price" value="480000"></div>
+                <div class="input-group"><label>Sq. Footage</label><input type="number" id="c3_sqft" value="1800"></div>
+                <div class="input-group"><label>Floors</label><input type="number" id="c3_floors" value="1"></div>
+                <div class="input-group"><label>Bedrooms</label><input type="number" id="c3_beds" value="3"></div>
+            </div>
+        </div>
+    </div>
+
+    <button class="btn-main" onclick="generateFullReport()">Calculate & Generate Report</button>
+
+    <div id="reportOutput" class="card"></div>
+</div>
+
+<script>
+    function calculateAdjustedPrice(sub, comp) {
+        const SQFT_VAL = 150;
+        const FLOOR_VAL = 25000;
+        const BED_VAL = 15000;
+
+        let adj = 0;
+        adj += (sub.sqft - comp.sqft) * SQFT_VAL;
+        adj += (sub.floors - comp.floors) * FLOOR_VAL;
+        adj += (sub.beds - comp.beds) * BED_VAL;
+
+        return comp.price + adj;
+    }
+
+    function generateFullReport() {
+        const sub = {
+            addr: document.getElementById('sub_addr').value || "the Subject Property",
+            sqft: parseInt(document.getElementById('sub_sqft').value),
+            floors: parseInt(document.getElementById('sub_floors').value),
+            beds: parseInt(document.getElementById('sub_beds').value)
+        };
+
+        let adjustedPrices = [];
+        let justifications = "";
+
+        for (let i = 1; i <= 3; i++) {
+            const comp = {
+                price: parseFloat(document.getElementById(`c${i}_price`).value),
+                sqft: parseInt(document.getElementById(`c${i}_sqft`).value),
+                floors: parseInt(document.getElementById(`c${i}_floors`).value),
+                beds: parseInt(document.getElementById(`c${i}_beds`).value)
+            };
+
+            const adjPrice = calculateAdjustedPrice(sub, comp);
+            adjustedPrices.push(adjPrice);
+
+            // Create Narrative
+            justifications += `Comparable #${i} sold for $${comp.price.toLocaleString()}. `;
+            if (adjPrice > comp.price) {
+                justifications += `The subject property offers superior features (SqFt/Floors/Beds) compared to this sale, requiring an upward adjustment. `;
+            } else if (adjPrice < comp.price) {
+                justifications += `This comparable property contains features superior to the subject, requiring a downward adjustment for an accurate comparison. `;
+            }
+            justifications += `Indicated value from this sale: $${adjPrice.toLocaleString()}.\n\n`;
+        }
+
+        const finalValue = adjustedPrices.reduce((a, b) => a + b) / 3;
+
+        let finalReport = `MARKET ANALYSIS SUMMARY: ${sub.addr.toUpperCase()}\n`;
+        finalReport += `==================================================\n\n`;
+        finalReport += justifications;
+        finalReport += `--------------------------------------------------\n`;
+        finalReport += `FINAL MARKET ESTIMATE: $${finalValue.toLocaleString()}\n`;
+        finalReport += `Based on a weighted average of three local comparable sales, the recommended listing range is $${(finalValue * 0.98).toLocaleString()} to $${(finalValue * 1.02).toLocaleString()}.`;
+
+        const out = document.getElementById('reportOutput');
+        out.innerText = finalReport;
+        out.style.display = 'block';
+        out.scrollIntoView({ behavior: 'smooth' });
+    }
+</script>
+
+</body>
+</html>
