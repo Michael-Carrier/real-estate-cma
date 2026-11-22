@@ -1053,7 +1053,7 @@ const ACTIONS={
       const r=transferTax(+a.price||500000,loc,!!a.first_time);
       return {text:`${loc==='ON'?'Ontario land transfer tax':'Quebec welcome tax'} on ${money(+a.price||500000)}${loc==='GAT'?' in Gatineau':''}: ${money(r.net)}${r.rebate?` after the ${money(r.rebate)} first-time buyer refund`:''}.`}; }},
   cma:{desc:'Run a comparative market analysis on a listing. args: listing (address or id)',
-    run(a){ const l=listingArg(a.listing); if(!l) return {text:`I couldn't find that listing for a CMA.`};
+    run(a){ const l=listingArg(a.listing); if(!l){ const k=kbAnswer('cma'); return {text:k.text+`\n\nTo run one, name a property, e.g. "CMA for 624 Prestone", or open the CMA tab.`,goto:'cma'}; }
       cmaFor(l.id); const r=runCMA(); go('ask');
       return {text:`CMA for ${l.addr}: indicated value ${money(r.value)}, suggested range ${money(r.lo)}–${money(r.hi)} (listed at ${money(l.price)}). Based on ${r.comps.map(c=>c.addr).join(', ')}.`,cols:['Comp','Sold','Adjusted'],rows:r.comps.map(c=>[c.addr,money(c.sold),money(c.adjusted)]),goto:'cma'}; }},
   commission:{desc:'Your commission on a sale. args: price, side_pct (default 2.5), split_pct (default 80)',
@@ -1070,12 +1070,33 @@ function pipelineSummary(){
   return {byStage,dealsInProgress:deals.length,expectedCommission:Math.round(val),active:act.length,avgDom:Math.round(act.reduce((x,l)=>x+l.dom,0)/act.length)};
 }
 
+/* ---------- built-in explanations (used offline, and when a CMA has no property) ---------- */
+const KB=[
+ {re:/\bcma\b|market analysis|analyse comparative|comparables?|comps?\b/, title:'How a CMA is calculated',
+  text:'A CMA (comparative market analysis) estimates what a home will sell for, based on recent nearby sales.\n1. Pick the 3 most similar recent sales: same type, close by, similar size, sold recently.\n2. Adjust each sale price for every difference from the subject: size ($ per sq ft), bedrooms, bathrooms, floors, garage, age, and market movement since the sale. If the subject has something better, the comp\'s price goes up; if the comp is better, it goes down.\n3. Average the adjusted prices, giving more weight to comps that are closer and needed smaller adjustments.\n4. Suggest a list range of about ±2% around that value.\nThe adjustment amounts are editable in the CMA tab. A CMA is an agent\'s opinion of value, not an appraisal.', goto:'cma'},
+ {re:/stress.?test|qualif/, title:'The mortgage stress test',
+  text:'Buyers must qualify at the higher of their contract rate + 2% or 5.25%, even though they pay the contract rate. Example: at 4.29%, they qualify at 6.29%. It caps how much a bank will lend; the affordability calculator uses it.', goto:'calc'},
+ {re:/cmhc|mortgage insurance|assurance.?pret|assurance hypothecaire/, title:'CMHC mortgage insurance',
+  text:'Needed when the down payment is under 20%. The premium is 2.80% (15–19.99% down), 3.10% (10–14.99%) or 4.00% (5–9.99%) of the loan, and is added to the mortgage. Provincial tax on the premium (8% in Ontario, 9% in Quebec) is paid in cash at closing. Homes of $1.5M or more can\'t be insured, so they need 20% down.', goto:'calc'},
+ {re:/min(imum)? down|mise de fonds|down payment/, title:'Minimum down payment',
+  text:'5% of the first $500,000, plus 10% of the part between $500,000 and $1.5M. At $1.5M or more it\'s 20% of the whole price. Example: on $650,000 the minimum is $25,000 + $15,000 = $40,000.', goto:'calc'},
+ {re:/welcome tax|taxe de bienvenue|mutation|land transfer|\bltt\b/, title:'Welcome tax vs land transfer tax',
+  text:'Both are one-time taxes the buyer pays on closing, calculated in brackets like income tax.\nOntario (Ottawa): 0.5% up to $55k, 1% to $250k, 1.5% to $400k, 2% to $2M, 2.5% above. First-time buyers get up to $4,000 back. Ottawa adds no city tax.\nQuebec (Gatineau, Chelsea…): 0.5% up to $62,900, 1% to $315,000, 1.5% above (2026), and some cities, including Gatineau, charge more on higher prices. No first-time buyer exemption.', goto:'calc'},
+ {re:/\bgds\b|\btds\b|debt ratio|ratio d.endettement/, title:'GDS and TDS ratios',
+  text:'GDS: housing costs (mortgage payment, property tax, heating, half the condo fees) must be at most 39% of gross income. TDS: housing plus all other debt payments must be at most 44%. Both are calculated at the stress-test rate.', goto:'calc'},
+ {re:/days on market|\bdom\b|jours sur le marche/, title:'Days on market',
+  text:'How long a listing has been for sale. Listings that sit well past the area average usually need a price review, better photos or more marketing. The dashboard flags anything at 45+ days.', goto:'dash'},
+];
+const isGeneralQ=n=>/^(how|what|why|explain|can you explain|tell me what|whats|what s|comment|pourquoi|qu.?est|c.?est quoi|explique)\b/.test(n) && !/\b(my|mes|mon|ma|today|aujourd|who|qui)\b/.test(n) && !/\d{2,}\s*(k|000|\$)|\$\s*\d|\d{3},?\d{3}/.test(n);
+function kbAnswer(q){ const n=norm(q); const k=KB.find(x=>x.re.test(n)); return k?{text:k.text,goto:k.goto,title:k.title}:null; }
+
 /* ---------- offline keyword router (works with no AI) ---------- */
 function keywordRoute(q){
   q=q.replace(/(\d)[\s\u00a0](?=\d{3}\b)/g,'$1');
   const n=norm(q), nums=(n.match(/\d[\d,.]*\s*k?/g)||[]).map(s=>{let v=parseFloat(s.replace(/,/g,''));if(/k/.test(s))v*=1000;return v;});
   const money_=nums.find(v=>v>=50000), area=findArea(q), city=cityArg(q), client=S.clients.find(c=>norm(c.name).split(/[\s&']+/).some(w=>w.length>3&&n.split(/\W+/).some(x=>x===w||x===w+'s'||x===w+"'s")));
   const beds=(n.match(/(\d)\s*(\+\s*)?(bed|bd|chambre|ch\b|br\b)/)||[])[1];
+  if(isGeneralQ(n)&&!listingArg(q.replace(/.*\b(for|of|pour|de)\s+/i,''))) return {action:'chat',args:{}};
   if(/follow|call|rappel|appeler|overdue|retard/.test(n)) return {action:'followups',args:{}};
   if(/pipeline|how.*(month|business)|deals|affaires/.test(n)) return {action:'pipeline',args:{}};
   if(/cma|market analysis|evaluation|worth|vaut/.test(n)) return {action:'cma',args:{listing:q.replace(/.*(cma|analysis|for|of|pour)\s*/i,'')}};
@@ -1097,7 +1118,7 @@ function keywordRoute(q){
 // Fill these two before pushing to GitHub so Jeremy's devices work with no setup.
 // The anon key is public by design (same one the bar app uses); the Anthropic key stays inside Supabase.
 const CLAUDE_FN_URL = 'https://tbnblorbmxthkbbdtekg.supabase.co/functions/v1/realtor-ai';
-const SUPABASE_ANON_KEY = '';  // Supabase → Project Settings → API → anon public key
+const SUPABASE_ANON_KEY = 'sb_publishable_2okRiKf4KoyruEgW6lSYLg_lvU0mKNv';  // publishable key: public by design
 const ENGINE_LABEL={claude:'Claude',ollama:'Local Llama',offline:'Keyword matcher (offline)'};
 let aiEngine='offline';
 function lsGet(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:v; }catch(e){ return d; } }
@@ -1165,7 +1186,8 @@ Known areas: ${Object.keys(AREAS).join(', ')}. Client names: ${S.clients.map(c=>
 Listings (id: address): ${LISTINGS.filter(l=>l.status!=='Sold').map(l=>l.id+': '+l.addr).join('; ')}.
 Actions:
 ${Object.entries(ACTIONS).map(([k,v])=>`- ${k}: ${v.desc}`).join('\n')}
-- chat: anything else (general advice, writing an email, questions not covered above). args: none
+- chat: anything else: general "how/what/why" questions about real estate concepts (e.g. "how is a CMA calculated?", "what is the stress test?"), writing an email or text, advice. args: none
+Only use cma, mortgage, transfer_tax etc. when the question asks to RUN that calculation on specific numbers or a specific property.
 Reply ONLY with JSON: {"action": "...", "args": {...}}`;
 }
 function compactData(){
@@ -1188,7 +1210,7 @@ function resultHtml(res){
   const btns=[];
   if(res.ids&&res.ids.length) btns.push(`<button class="btn ghost sm" onclick='showOnMap(${JSON.stringify(res.ids)})'>Show on map</button>`);
   if(res.clientId) btns.push(`<button class="btn ghost sm" onclick="openClient('${res.clientId}')">Open client</button>`);
-  if(res.goto) btns.push(`<button class="btn ghost sm" onclick="go('${res.goto}')">Open full report</button>`);
+  if(res.goto) btns.push(`<button class="btn ghost sm" onclick="go('${res.goto}')">Open ${({cma:'CMA',calc:'calculators',dash:'dashboard'})[res.goto]||'it'}</button>`);
   if(btns.length) h+=`<div class="flex" style="margin-top:8px">${btns.join('')}</div>`;
   return h;
 }
@@ -1205,6 +1227,8 @@ async function ask(){
   const routeTag=$('showRoute').checked?`<div class="small muted" style="margin-top:6px">→ ${route.action}(${esc(JSON.stringify(route.args||{}))})</div>`:'';
 
   if(route.action==='chat'){
+    const kb=kbAnswer(q);
+    if(aiEngine==='offline'&&kb){ pending.innerHTML=`<div class="tag">${engine} · ${esc(kb.title)}</div>${esc(kb.text).replace(/\n/g,'<br>')}${resultHtml({goto:kb.goto})}${routeTag}`; $('chat').scrollTop=1e9; return; }
     if(aiEngine==='offline'){ pending.innerHTML=`<div class="tag">${engine}</div>I can answer questions about listings, clients, appointments and calculations. Free-form questions like this one need an AI engine (Claude or Ollama) to be connected.${routeTag}`; return; }
     try{
       const ans=await llm(`You are a helpful assistant to a real estate agent working in Ottawa (Ontario) and Gatineau (Quebec). Today is ${TODAY.toDateString()}. Use the data below when relevant. Never invent listings, clients or numbers that are not in the data. Answer in the same language as the question. Be concise.\n\n${compactData()}`,q,false);
