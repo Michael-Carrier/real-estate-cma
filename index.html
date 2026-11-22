@@ -651,11 +651,22 @@ function ensureMap(){
   if(map) return;
   if(!L_){ $('map').innerHTML='<p style="padding:20px" class="muted">Map library could not load (no internet?). Listings are shown below.</p>'; renderListings(); return; }
   map=L_.map('map').setView([45.40,-75.72],11);
-  L_.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap contributors &copy; CARTO',maxZoom:19}).addTo(map);
+  addTiles(map);
   markerLayer=L_.layerGroup().addTo(map);
   renderListings();
 }
 const L_ = window.L; // Leaflet (L is used for listing lookup)
+// Free map tiles, no API key. If the first source fails to load, switch to the backup.
+const TILE_SOURCES=[
+  {url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',opt:{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}},
+  {url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',opt:{maxZoom:19,attribution:'Tiles &copy; Esri'}},
+];
+function addTiles(m,i=0){
+  const src=TILE_SOURCES[i]; if(!src) return;
+  let fails=0, switched=false;
+  const layer=L_.tileLayer(src.url,src.opt).addTo(m);
+  layer.on('tileerror',()=>{ if(++fails>=4&&!switched&&TILE_SOURCES[i+1]){ switched=true; m.removeLayer(layer); addTiles(m,i+1); } });
+}
 function initFilters(){
   $('fArea').innerHTML+=Object.keys(AREAS).map(a=>`<option>${a}</option>`).join('');
   const types=[...new Set(LISTINGS.map(l=>l.type))];
@@ -903,7 +914,7 @@ function runCMA(){
 
   setTimeout(()=>{
     if(!L_) return;
-    if(!cmaMap){ cmaMap=L_.map('cmaMap'); L_.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap &copy; CARTO'}).addTo(cmaMap); cmaLayer=L_.layerGroup().addTo(cmaMap); }
+    if(!cmaMap){ cmaMap=L_.map('cmaMap'); addTiles(cmaMap); cmaLayer=L_.layerGroup().addTo(cmaMap); }
     cmaMap.invalidateSize(); cmaLayer.clearLayers();
     L_.circleMarker([s.lat,s.lng],{radius:11,color:'#fff',weight:2,fillColor:'#d9822b',fillOpacity:1}).bindTooltip('Subject',{permanent:true,direction:'top'}).addTo(cmaLayer);
     rows.forEach((r,i)=>L_.circleMarker([r.c.lat,r.c.lng],{radius:9,color:'#fff',weight:2,fillColor:'#1f4e79',fillOpacity:1}).bindTooltip('#'+(i+1)+' '+money(r.c.price),{permanent:true,direction:'top'}).addTo(cmaLayer));
